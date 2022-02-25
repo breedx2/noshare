@@ -2,11 +2,11 @@ import os
 import sys
 import subprocess
 from configparser import ConfigParser
-import threading
-import socket
+# import threading
+import asyncio
 import random
 import uuid
-import socketserver
+# import socketserver
 import re
 
 # 4 commands to build:
@@ -20,65 +20,104 @@ import re
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
 
-class OfferServerHandler(socketserver.StreamRequestHandler):
-    def handle(self):
-        print("HANDLE CALLED IN HANDLER OMG OMG {}".format(self.server.secret_id))
-        # data = str(self.request.recv(1024), 'ascii')
-        id = self.rfile.readline().strip()
-        print("Client requests: {}".format(id))
-        if self.server.secret_id != id:
-            self.wfile.write('no\n')
-            self.connection.close()
-            return
-        self.wfile.write('{}\n{}\n'.format(self.config.file, self.config.file_size))
+# class OfferServerHandler(socketserver.StreamRequestHandler):
+#     def handle(self):
+#         print("HANDLE CALLED IN HANDLER OMG OMG {}".format(self.server.secret_id))
+#         # data = str(self.request.recv(1024), 'ascii')
+#         id = self.rfile.readline().strip()
+#         print("Client requests: {}".format(id))
+#         if self.server.secret_id != id:
+#             self.wfile.write('no\n')
+#             self.connection.close()
+#             return
+#         self.wfile.write('{}\n{}\n'.format(self.config.file, self.config.file_size))
 
         # cur_thread = threading.current_thread()
         # response = bytes("{}: {}".format(cur_thread.name, data), 'ascii')
         # self.request.sendall(response)
 
+class FileSender:
+    def __init__(self, config):
+        self.config = config
+        self.server = None
+        self.offer_id = ''
+    async def send(self, reader, writer):
+        print('New client connected.')
+        id = await reader.readline()
+        id = id.decode('utf-8').rstrip()
+        print("client requests: {}".format(id))
+        if self.offer_id != id:
+            print("INVALID OFFER!")
+            writer.write('no\n'.encode())
+            self.server.close()
+            return
+        writer.write('{}\n{}\n'.format(self.config.file, self.config.file_size).encode())
+
 class FileReceiver:
     def __init__(self, id, local_port):
         self.id = id
         self.local_port = local_port
-    def receive(self):
+    async def receive(self):
+        reader,writer = await self.connect()
+        writer.write("{}\n".format(self.id).encode())
+
+        line = await reader.readline()
+        line = line.decode('utf-8').rstrip()
+        if line == 'no':
+            print('offer was refused :(')
+            return
+        file = line
+        size = await reader.readline()
+        size = size.decode('utf-8').rstrip()
+        print('I think the file is {} at size {}'.format(file, size))
+
+    async def connect(self):
         import time
-        time.sleep(1)
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect(("localhost", self.local_port))
-            sock.sendall(bytes("{}\n".format(self.id), "utf-8"))
+        tries = 50
+        while tries > 0:
+            try:
+                reader, writer = await asyncio.open_connection('127.0.0.1', self.local_port)
+                return reader,writer
+            except:
+                tries = tries - 1
+                time.sleep(0.1)
 
 class Tunnel:
     def __init__(self, config):
         self.config = config
-    def offer(self):
+    async def offer(self):
         # TODO: Validate config.file exists/readable before continuing
         print("Setting up local server listener...")
-        with socketserver.TCPServer(("127.0.0.1", 0), OfferServerHandler) as server:
-            ip, port = server.server_address
-            print("Local ephemeral port is {}".format(port))
-            server_thread = threading.Thread(target=server.handle_request)
-            # Exit the server thread when the main thread terminates
-            server_thread.daemon = True
-            server_thread.start()
-            print("Setting up ssh tunnel...")
-            remote_port = self._random_port()
-            server.secret_id = "{}:{}".format(remote_port, uuid.uuid4().hex)
-            ssh = Ssh(config, port, remote_port)
-            ssh.connect()
-            print("offer id: {}".format(server.secret_id))
-            ssh.wait()
-    def receive(self, id):
+
+        sender = FileSender(config)
+
+        # async def new_connection(reader, writer):
+        #     print('got new connection')
+
+        server = await asyncio.start_server(sender.send, '127.0.0.1', 0, backlog=1)
+        sender.server = server
+        ip, port = server.sockets[0].getsockname()
+        print("Local ephemeral port is {}".format(port))
+
+        remote_port = self._random_port()
+        sender.offer_id = "{}:{}".format(remote_port, uuid.uuid4().hex)
+        print("Setting up ssh tunnel...")
+        print("offer id: {}".format(sender.offer_id))
+        ssh = Ssh(config, port, remote_port)
+        ssh.connect()
+        await server.serve_forever()
+        # ssh.wait()
+
+    async def receive(self, id):
         print("Setting up ssh tunnel...")
         local_port = self._random_port()
         remote_port = re.sub(r':.*', '', id)
         ssh = Ssh(config, local_port, remote_port, offer_side=False)
         ssh.connect()
         print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
-        print("TODO: Probably sleep a bit here zzz or poll until local port is active")
         receiver = FileReceiver(id, local_port)
-        receiver.receive()
-        ssh.wait() # DEBUG ONLY
-
+        await receiver.receive()
+        # ssh.wait() # DEBUG ONLY
 
     def _random_port(self):
         return random.randint(1025, 65000)
@@ -207,9 +246,9 @@ if cmd == 'offer':
     config.file = arg
     config.file_size = os.path.getsize(config.file)
     tunnel = Tunnel(config)
-    tunnel.offer()
+    asyncio.run(tunnel.offer())
 elif cmd == 'receive':
     if len(sys.argv) <= 2:
         usage()
     tunnel = Tunnel(config)
-    tunnel.receive(arg)
+    asyncio.run(tunnel.receive(arg))
