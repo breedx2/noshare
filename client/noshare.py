@@ -3,9 +3,11 @@ import sys
 import subprocess
 from configparser import ConfigParser
 import threading
+import socket
 import random
 import uuid
 import socketserver
+import re
 
 # 4 commands to build:
 # * help
@@ -18,13 +20,32 @@ import socketserver
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
 
-class OfferServerHandler(socketserver.BaseRequestHandler):
+class OfferServerHandler(socketserver.StreamRequestHandler):
     def handle(self):
         print("HANDLE CALLED IN HANDLER OMG OMG {}".format(self.server.secret_id))
         # data = str(self.request.recv(1024), 'ascii')
+        id = self.rfile.readline().strip()
+        print("Client requests: {}".format(id))
+        if self.server.secret_id != id:
+            self.wfile.write('no\n')
+            self.connection.close()
+            return
+        self.wfile.write('{}\n{}\n'.format(self.config.file, self.config.file_size))
+
         # cur_thread = threading.current_thread()
         # response = bytes("{}: {}".format(cur_thread.name, data), 'ascii')
         # self.request.sendall(response)
+
+class FileReceiver:
+    def __init__(self, id, local_port):
+        self.id = id
+        self.local_port = local_port
+    def receive(self):
+        import time
+        time.sleep(1)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect(("localhost", self.local_port))
+            sock.sendall(bytes("{}\n".format(self.id), "utf-8"))
 
 class Tunnel:
     def __init__(self, config):
@@ -40,33 +61,48 @@ class Tunnel:
             server_thread.daemon = True
             server_thread.start()
             print("Setting up ssh tunnel...")
-            remote_port = random.randint(1025, 65000)
+            remote_port = self._random_port()
             server.secret_id = "{}:{}".format(remote_port, uuid.uuid4().hex)
             ssh = Ssh(config, port, remote_port)
             ssh.connect()
             print("offer id: {}".format(server.secret_id))
             ssh.wait()
+    def receive(self, id):
+        print("Setting up ssh tunnel...")
+        local_port = self._random_port()
+        remote_port = re.sub(r':.*', '', id)
+        ssh = Ssh(config, local_port, remote_port, offer_side=False)
+        ssh.connect()
+        print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
+        print("TODO: Probably sleep a bit here zzz or poll until local port is active")
+        receiver = FileReceiver(id, local_port)
+        receiver.receive()
+        ssh.wait() # DEBUG ONLY
+
+
+    def _random_port(self):
+        return random.randint(1025, 65000)
+
 
 class Ssh:
-    def __init__(self, config, local_port, remote_port):
+    def __init__(self, config, local_port, remote_port, offer_side = True):
         self.config = config
         self.local_port = local_port
         self.remote_port = remote_port
+        self.offer_side = offer_side
         self.child = None
     def connect(self):
+        tunnel_flag = '-R' if self.offer_side else '-L'
+        tunnel_arg = self._make_tunnel_arg()
         cmd = [
             "ssh", "-p", self.config.remotePort, "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
             "-N", "-q",
-            # "-L", "6666:localhost:2222",
-            "-R", "{}:localhost:{}".format(self.remote_port, self.local_port),
+            tunnel_flag, tunnel_arg,
             "-i", self.config.keyfile,
             "app@" + self.config.remoteHost
         ]
-        print(cmd)
         self.child = subprocess.Popen(cmd)
-        print(self.child)
-        # print("result of call = {}".format(rc))
         print("ssh tunnel established")
 
     def wait(self):
@@ -76,6 +112,11 @@ class Ssh:
         if self.child.returncode != 0:
             # todo: probably check that we didn't complete?
             print("ssh tunnel failed - is the share down (lolololo)?")
+
+    def _make_tunnel_arg(self):
+        if self.offer_side:
+            return "{}:localhost:{}".format(self.remote_port, self.local_port)
+        return "{}:localhost:{}".format(self.local_port, self.remote_port)
 
 class Config:
     def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY):
@@ -121,12 +162,11 @@ def usage():
     print(" noshare help            : show this help")
     print(" noshare config          : configure the program")
     print(" noshare offer <file>    : offer a single file")
-    print(" noshare receive <id> : receive a file by id\n")
+    print(" noshare receive <id>    : receive a file by id\n")
     sys.exit()
 
-# parser = argparse.ArgumentParser(description='noshare tunnels a file with a peer over ssh')
-# parser.add_argument('command', metavar='CMD', nargs=1, choices=['config', 'offer', 'receive'])
-# parser.add_argument('arg', metavar='arg', nargs=1, choices=['config', 'offer', 'receive'])
+
+# ---- begin main ----
 
 if len(sys.argv) == 1:
     usage()
@@ -165,9 +205,11 @@ if cmd == 'offer' or cmd == 'receive':
 
 if cmd == 'offer':
     config.file = arg
+    config.file_size = os.path.getsize(config.file)
     tunnel = Tunnel(config)
     tunnel.offer()
 elif cmd == 'receive':
     if len(sys.argv) <= 2:
         usage()
-    print("not ready yet")
+    tunnel = Tunnel(config)
+    tunnel.receive(arg)
