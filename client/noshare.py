@@ -19,22 +19,7 @@ import re
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
-
-# class OfferServerHandler(socketserver.StreamRequestHandler):
-#     def handle(self):
-#         print("HANDLE CALLED IN HANDLER OMG OMG {}".format(self.server.secret_id))
-#         # data = str(self.request.recv(1024), 'ascii')
-#         id = self.rfile.readline().strip()
-#         print("Client requests: {}".format(id))
-#         if self.server.secret_id != id:
-#             self.wfile.write('no\n')
-#             self.connection.close()
-#             return
-#         self.wfile.write('{}\n{}\n'.format(self.config.file, self.config.file_size))
-
-        # cur_thread = threading.current_thread()
-        # response = bytes("{}: {}".format(cur_thread.name, data), 'ascii')
-        # self.request.sendall(response)
+CHUNK_LEN = 1024*1024
 
 class FileSender:
     def __init__(self, config):
@@ -43,15 +28,39 @@ class FileSender:
         self.offer_id = ''
     async def send(self, reader, writer):
         print('New client connected.')
+        handshake = await self.do_handshake(reader, writer)
+        if not handshake:
+            # self.server.close()
+            return
+        await self.send_file(reader, writer)
+
+
+    async def do_handshake(self, reader, writer):
         id = await reader.readline()
         id = id.decode('utf-8').rstrip()
         print("client requests: {}".format(id))
         if self.offer_id != id:
             print("INVALID OFFER!")
             writer.write('no\n'.encode())
-            self.server.close()
-            return
-        writer.write('{}\n{}\n'.format(self.config.file, self.config.file_size).encode())
+            return False
+        file_and_size = '{}\n{}\n'.format(os.path.basename(self.config.file), self.config.file_size)
+        writer.write(file_and_size.encode())
+        ack = await reader.readline()
+        ack = ack.decode('utf-8').rstrip()
+        if ack != 'ok':
+            print('remote side aborted.')
+            return False
+        return True
+
+    async def send_file(self, reader, writer):
+        with open(self.config.file, "rb") as infile:
+            while True:
+                await writer.drain()
+                buff = infile.read(CHUNK_LEN)
+                if len(buff) == 0:
+                    break
+                writer.write(buff)
+
 
 class FileReceiver:
     def __init__(self, id, local_port):
@@ -66,10 +75,26 @@ class FileReceiver:
         if line == 'no':
             print('offer was refused :(')
             return
-        file = line
+        file = os.path.basename(line)
         size = await reader.readline()
-        size = size.decode('utf-8').rstrip()
-        print('I think the file is {} at size {}'.format(file, size))
+        size = int(size.decode('utf-8').rstrip())
+        yn = input('Download {} ({})? [y] '.format(file, sized(size)))
+        if yn.lower() != 'y' and yn != '':
+            print('refused.')
+            writer.write('no\n'.encode())
+            return
+        print('downloading...')
+        writer.write('ok\n'.encode())
+
+        remaining = size
+        with open(file, "wb") as out:
+            while remaining > 0:
+                buff = await reader.read(CHUNK_LEN)
+                if len(buff) > 0:
+                    out.write(buff)
+                remaining -= len(buff)
+        print("saved {}".format(file))
+
 
     async def connect(self):
         import time
@@ -196,6 +221,15 @@ class Config:
         with open(Config.filename(), 'w') as out:
             config.write(out)
 
+def sized(size):
+    if size < 1024: return "{:.1f} bytes".format(size)
+    size /= 1024
+    if size < 1024: return "{:.1f} kB".format(size)
+    size /= 1024
+    if size < 1024: return "{:.1f} MB".format(size)
+    size /= 1024
+    return "{:.1f} GB".format(size)
+
 def usage():
     print("\n\u001b[36m noshare \033[0musage: \n")
     print(" noshare help            : show this help")
@@ -205,7 +239,7 @@ def usage():
     sys.exit()
 
 
-# ---- begin main ----
+# --------- begin main ----------
 
 if len(sys.argv) == 1:
     usage()
