@@ -174,7 +174,6 @@ class Tunnel:
     def __init__(self, config):
         self.config = config
     async def offer(self):
-        # TODO: Validate config.file exists/readable before continuing
         print("Setting up local server listener...")
 
         sender = FileSender(config)
