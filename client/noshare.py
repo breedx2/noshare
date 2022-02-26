@@ -6,18 +6,12 @@ from datetime import datetime
 import asyncio
 import random
 import uuid
-# import socketserver
 import re
-
-# 4 commands to build:
-# * help
-# * config (write ~/.noshare)
-# * offser <file>
-# * receive <key>
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
 CHUNK_LEN = 1024*1024
+# CHUNK_LEN = 16*1024
 
 class FileSender:
     def __init__(self, config):
@@ -115,20 +109,46 @@ class Progress:
         self.size = size
         self.start_time = datetime.now().timestamp()
         self.last_display = 0.0
+        self.spin = ['/', '-', '\\', '|']
+        self.last_str = ''
 
     def show(self, remaining, force=False):
         now = datetime.now().timestamp()
         if not force and now - self.last_display < 0.5:
             return
+        print(''.ljust(len(self.last_str), '\b'), end='', flush=True)
+
         elapsed = now - self.start_time
         transferred = self.size - remaining
         rate = transferred / elapsed
-        rate_str = "{}/s".format(sized(rate))
-        percent = transferred * 100.0 / self.size
-        size_bit = "[{:>8s} of {:<8s}]".format(sized(transferred), sized(self.size))
+        rate_str = self.rate(rate)
+        percent = self.percent(transferred)
+        size_bit = self.size_bit(transferred)
         eta = self.eta(rate, remaining)
-        print("{:3.1f} % [{}] {} eta {}".format(percent, rate_str, size_bit, eta))
+        throb = self.throb()
+        str = " {} {} [{}] {} eta {}      ".format(throb, percent, rate_str, size_bit, eta)
+        print(str, end='', flush=True)
         self.last_display = now
+        self.last_str = str
+        if remaining == 0: print('')
+
+    def rate(self, rate):
+        return "\u001b[31;1m{}/s\033[0m".format(sized(rate))
+
+    def percent(self, transferred):
+        p = transferred * 100.0 / self.size
+        return "\u001b[33;1m{:3.1f}%\033[0m".format(p)
+
+    def size_bit(self, transferred):
+        a = "\u001b[36;1m{}\033[0m".format(sized(transferred))
+        b = "\u001b[36;1m{}\033[0m".format(sized(self.size))
+        inner = "{} of {}".format(a, b)
+        return "\u001b[37;1m[\033[0m{}\u001b[37;1m]\033[0m".format(inner)
+
+    def throb(self):
+        self.spin.append(self.spin.pop(0))
+        ch = self.spin[0]
+        return " \u001b[31;1m{}\033[0m".format(ch)
 
     def eta(self, rate, remaining):
         eta_s = remaining/rate
@@ -136,7 +156,8 @@ class Progress:
         rest = eta_s - 60*60*hours
         min = int(rest / 60)
         sec = int(rest - 60 * min)
-        return "{:02d}:{:02d}:{:02d}".format(hours, min, sec)
+        str = "{:02d}:{:02d}:{:02d}".format(hours, min, sec)
+        return "\u001b[37;1m{}\033[0m".format(str)
 
 
 class Tunnel:
