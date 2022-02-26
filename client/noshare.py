@@ -2,7 +2,7 @@ import os
 import sys
 import subprocess
 from configparser import ConfigParser
-# import threading
+from datetime import datetime
 import asyncio
 import random
 import uuid
@@ -14,8 +14,6 @@ import re
 # * config (write ~/.noshare)
 # * offser <file>
 # * receive <key>
-
-# key could be base64.b64encode(uuid.uuid4().bytes)
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -30,6 +28,7 @@ class FileSender:
         print('New client connected.')
         handshake = await self.do_handshake(reader, writer)
         if not handshake:
+            # TODO: Decide if we wanna close out....
             # self.server.close()
             return
         await self.send_file(reader, writer)
@@ -44,6 +43,7 @@ class FileSender:
             writer.write('no\n'.encode())
             return False
         file_and_size = '{}\n{}\n'.format(os.path.basename(self.config.file), self.config.file_size)
+        # TODO: Send file hash so remote can validate...or include hash in id!
         writer.write(file_and_size.encode())
         ack = await reader.readline()
         ack = ack.decode('utf-8').rstrip()
@@ -78,6 +78,7 @@ class FileReceiver:
         file = os.path.basename(line)
         size = await reader.readline()
         size = int(size.decode('utf-8').rstrip())
+        # TODO: Warn about overwrite!
         yn = input('Download {} ({})? [y] '.format(file, sized(size)))
         if yn.lower() != 'y' and yn != '':
             print('refused.')
@@ -86,6 +87,7 @@ class FileReceiver:
         print('downloading...')
         writer.write('ok\n'.encode())
 
+        progress = Progress(size)
         remaining = size
         with open(file, "wb") as out:
             while remaining > 0:
@@ -93,8 +95,9 @@ class FileReceiver:
                 if len(buff) > 0:
                     out.write(buff)
                 remaining -= len(buff)
+                progress.show(remaining)
+        progress.show(0, force=True)
         print("saved {}".format(file))
-
 
     async def connect(self):
         import time
@@ -106,6 +109,35 @@ class FileReceiver:
             except:
                 tries = tries - 1
                 time.sleep(0.1)
+
+class Progress:
+    def __init__(self, size):
+        self.size = size
+        self.start_time = datetime.now().timestamp()
+        self.last_display = 0.0
+
+    def show(self, remaining, force=False):
+        now = datetime.now().timestamp()
+        if not force and now - self.last_display < 0.5:
+            return
+        elapsed = now - self.start_time
+        transferred = self.size - remaining
+        rate = transferred / elapsed
+        rate_str = "{}/s".format(sized(rate))
+        percent = transferred * 100.0 / self.size
+        size_bit = "[{:>8s} of {:<8s}]".format(sized(transferred), sized(self.size))
+        eta = self.eta(rate, remaining)
+        print("{:3.1f} % [{}] {} eta {}".format(percent, rate_str, size_bit, eta))
+        self.last_display = now
+
+    def eta(self, rate, remaining):
+        eta_s = remaining/rate
+        hours = int(eta_s / (60*60))
+        rest = eta_s - 60*60*hours
+        min = int(rest / 60)
+        sec = int(rest - 60 * min)
+        return "{:02d}:{:02d}:{:02d}".format(hours, min, sec)
+
 
 class Tunnel:
     def __init__(self, config):
