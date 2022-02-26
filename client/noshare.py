@@ -8,10 +8,11 @@ import random
 import uuid
 import re
 
+# TODO: Consider ultra simple mode that omits command and detects id/file
+
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
-CHUNK_LEN = 1024*1024
-# CHUNK_LEN = 16*1024
+CHUNK_LEN = 64*1024
 
 class FileSender:
     def __init__(self, config):
@@ -65,10 +66,15 @@ class FileReceiver:
         reader,writer = await self.connect()
         writer.write("{}\n".format(self.id).encode())
 
-        line = await reader.readline()
+        try:
+            line = await reader.readline()
+        except ConnectionResetError as e:
+            print("ERROR: offer is invalid or connection couldn't be established")
+            return
+
         line = line.decode('utf-8').rstrip()
         if line == 'no':
-            print('offer was refused :(')
+            print('ERROR: offer was refused :(')
             return
         file = os.path.basename(line)
         size = await reader.readline()
@@ -173,9 +179,6 @@ class Tunnel:
 
         sender = FileSender(config)
 
-        # async def new_connection(reader, writer):
-        #     print('got new connection')
-
         server = await asyncio.start_server(sender.send, '127.0.0.1', 0, backlog=1)
         sender.server = server
         ip, port = server.sockets[0].getsockname()
@@ -199,7 +202,8 @@ class Tunnel:
         print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
         receiver = FileReceiver(id, local_port)
         await receiver.receive()
-        # ssh.wait() # DEBUG ONLY
+        ssh.close()
+        ssh.wait(quiet=True)
 
     def _random_port(self):
         return random.randint(1025, 65000)
@@ -224,12 +228,17 @@ class Ssh:
             "app@" + self.config.remoteHost
         ]
         self.child = subprocess.Popen(cmd)
-        print("ssh tunnel established")
+        print("ssh tunnel established (pid={})".format(self.child.pid))
 
-    def wait(self):
-        print("waiting for child to exit")
+    def close(self):
+        self.child.terminate()
+
+    def wait(self, quiet=False):
+        if not quiet:
+            print("waiting for child to exit")
         self.child.wait()
-        print("child finished? exit code = {}".format(self.child.returncode))
+        if not quiet:
+            print("child finished? exit code = {}".format(self.child.returncode))
         if self.child.returncode != 0:
             # todo: probably check that we didn't complete?
             print("ssh tunnel failed - is the share down (lolololo)?")
