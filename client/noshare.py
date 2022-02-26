@@ -35,6 +35,7 @@ class FileSender:
         if self.offer_id != id:
             print("INVALID OFFER!")
             writer.write('no\n'.encode())
+            await writer.drain()
             return False
         file_and_size = '{}\n{}\n'.format(os.path.basename(self.config.file), self.config.file_size)
         # TODO: Send file hash so remote can validate...or include hash in id!
@@ -126,7 +127,7 @@ class Progress:
         size_bit = self.size_bit(transferred)
         eta = self.eta(rate, remaining)
         throb = self.throb()
-        str = " {} {} [{}] {} eta {}      ".format(throb, percent, rate_str, size_bit, eta)
+        str = " {} {} [{}] {} {}      ".format(throb, percent, rate_str, size_bit, eta)
         print(str, end='', flush=True)
         self.last_display = now
         self.last_str = str
@@ -152,12 +153,15 @@ class Progress:
 
     def eta(self, rate, remaining):
         eta_s = remaining/rate
+        if remaining == 0:
+            eta_s = datetime.now().timestamp() - self.start_time
         hours = int(eta_s / (60*60))
         rest = eta_s - 60*60*hours
         min = int(rest / 60)
         sec = int(rest - 60 * min)
+        prefix = 'eta' if remaining > 0 else 'took'
         str = "{:02d}:{:02d}:{:02d}".format(hours, min, sec)
-        return "\u001b[37;1m{}\033[0m".format(str)
+        return "{} \u001b[37;1m{}\033[0m".format(prefix, str)
 
 
 class Tunnel:
