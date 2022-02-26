@@ -44,7 +44,7 @@ class FileSender:
         ack = await reader.readline()
         ack = ack.decode('utf-8').rstrip()
         if ack != 'ok':
-            print('remote side aborted.')
+            print('remote side refused.')
             return False
         return True
 
@@ -64,27 +64,14 @@ class FileReceiver:
         self.local_port = local_port
     async def receive(self):
         reader,writer = await self.connect()
-        writer.write("{}\n".format(self.id).encode())
+        file,size = await self.handshake(reader, writer)
+        if not file or not size: return
+        if not self._confirm('Download {} ({})'.format(file, sized(size)), writer):
+            return
+        if os.path.exists(file):
+            if not self._confirm('\u001b[31;1m* FILE EXISTS *\033[0m -- are you very sure you want to overwrite', writer):
+                return
 
-        try:
-            line = await reader.readline()
-        except ConnectionResetError as e:
-            print("ERROR: offer is invalid or connection couldn't be established")
-            return
-
-        line = line.decode('utf-8').rstrip()
-        if line == 'no':
-            print('ERROR: offer was refused :(')
-            return
-        file = os.path.basename(line)
-        size = await reader.readline()
-        size = int(size.decode('utf-8').rstrip())
-        # TODO: Warn about overwrite!
-        yn = input('Download {} ({})? [y] '.format(file, sized(size)))
-        if yn.lower() != 'y' and yn != '':
-            print('refused.')
-            writer.write('no\n'.encode())
-            return
         print('downloading...')
         writer.write('ok\n'.encode())
 
@@ -100,6 +87,14 @@ class FileReceiver:
         progress.show(0, force=True)
         print("saved {}".format(file))
 
+    def _confirm(self, prefix, writer):
+        yn = input('{}? [y] '.format(prefix))
+        if yn.lower() == 'y' or yn == '':
+            return True
+        print('refused.')
+        writer.write('no\n'.encode())
+        return False
+
     async def connect(self):
         import time
         tries = 50
@@ -110,6 +105,24 @@ class FileReceiver:
             except:
                 tries = tries - 1
                 time.sleep(0.1)
+
+    async def handshake(self, reader, writer):
+        writer.write("{}\n".format(self.id).encode())
+
+        try:
+            line = await reader.readline()
+        except ConnectionResetError as e:
+            print("ERROR: offer is invalid or connection couldn't be established")
+            return None,None
+
+        line = line.decode('utf-8').rstrip()
+        if line == 'no':
+            print('ERROR: offer was refused :(')
+            return None,None
+        file = os.path.basename(line)
+        size = await reader.readline()
+        size = int(size.decode('utf-8').rstrip())
+        return file,size
 
 class Progress:
     def __init__(self, size):
