@@ -50,13 +50,18 @@ class FileSender:
 
     async def send_file(self, reader, writer):
         with open(self.config.file, "rb") as infile:
+            progress = Progress(self.config.file_size)
+            remaining = self.config.file_size
             while True:
                 await writer.drain()
                 buff = infile.read(CHUNK_LEN)
                 if len(buff) == 0:
                     break
                 writer.write(buff)
-
+                remaining -= len(buff)
+                progress.show(remaining)
+            progress.show(0, force=True)
+            print('\u001b[32;1mtransfer complete!\033[0m')
 
 class FileReceiver:
     def __init__(self, id, local_port):
