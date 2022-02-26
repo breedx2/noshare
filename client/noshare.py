@@ -69,7 +69,7 @@ class FileReceiver:
         if not self._confirm('Download {} ({})'.format(file, sized(size)), writer):
             return
         if os.path.exists(file):
-            if not self._confirm('\u001b[31;1m* FILE EXISTS *\033[0m -- are you very sure you want to overwrite', writer):
+            if not self._confirm('\u001b[31;1m* FILE EXISTS *\033[0m -- are you very sure you want to overwrite', writer, 'n'):
                 return
 
         print('downloading...')
@@ -87,9 +87,9 @@ class FileReceiver:
         progress.show(0, force=True)
         print("saved {}".format(file))
 
-    def _confirm(self, prefix, writer):
-        yn = input('{}? [y] '.format(prefix))
-        if yn.lower() == 'y' or yn == '':
+    def _confirm(self, prefix, writer, default = 'y'):
+        yn = input('{}? [{}] '.format(prefix, default)) or default
+        if yn.lower() == 'y':
             return True
         print('refused.')
         writer.write('no\n'.encode())
@@ -121,6 +121,11 @@ class FileReceiver:
             return None,None
         file = os.path.basename(line)
         size = await reader.readline()
+
+        if not file or not size:
+            print('ERROR: invalid remote shit')
+            return None,None
+
         size = int(size.decode('utf-8').rstrip())
         return file,size
 
