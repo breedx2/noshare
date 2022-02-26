@@ -8,8 +8,6 @@ import random
 import uuid
 import re
 
-# TODO: Consider ultra simple mode that omits command and detects id/file
-
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
 CHUNK_LEN = 64*1024
@@ -209,7 +207,7 @@ class Tunnel:
         remote_port = self._random_port()
         sender.offer_id = "{}:{}".format(remote_port, uuid.uuid4().hex)
         print("Setting up ssh tunnel...")
-        print("offer id: {}".format(sender.offer_id))
+        print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
         ssh = Ssh(config, port, remote_port)
         ssh.connect()
         await server.serve_forever()
@@ -242,7 +240,7 @@ class Ssh:
         tunnel_flag = '-R' if self.offer_side else '-L'
         tunnel_arg = self._make_tunnel_arg()
         cmd = [
-            "ssh", "-p", self.config.remotePort, "-o", "StrictHostKeyChecking=no",
+            "ssh", "-p", str(self.config.remotePort), "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
             "-N", "-q",
             tunnel_flag, tunnel_arg,
@@ -320,12 +318,14 @@ def sized(size):
 
 def usage():
     print("\n\u001b[36m noshare \033[0musage: \n")
-    print(" noshare help            : show this help")
-    print(" noshare config          : configure the program")
-    print(" noshare offer <file>    : offer a single file")
-    print(" noshare receive <id>    : receive a file by id\n")
+    print(" noshare help      : show this help")
+    print(" noshare config    : configure the program")
+    print(" noshare <file>    : offer a single file")
+    print(" noshare <id>      : receive a file by id\n")
     sys.exit()
 
+def match_id(str):
+    pass
 
 # --------- begin main ----------
 
@@ -342,7 +342,7 @@ if len(sys.argv) > 2:
 if (cmd == 'help') or (cmd == 'h'):
     usage()
 
-if cmd == 'config' or not Config.exists():
+if cmd == 'config':
     if Config.exists():
         print("Warning: config exists -- this will overwrite it.")
     config = Config.prompt()
@@ -350,27 +350,27 @@ if cmd == 'config' or not Config.exists():
     print("Config saved to {}".format(Config.filename()))
     usage()
 
+arg = cmd
 config = None
-if cmd == 'offer' or cmd == 'receive':
-    if len(sys.argv) <= 2:
-        usage()
-    if(Config.exists()):
-        config = Config.read()
-        print("Config read from {}".format(Config.filename()))
-    else:
-        print("Not yet configured. Let's get you set up.\n")
-        config = Config.prompt()
-        config.write()
-        print("Config saved to {}".format(Config.filename()))
-        usage()
+if(Config.exists()):
+    config = Config.read()
+    print("Config read from {}".format(Config.filename()))
+else:
+    print("\n\u001b[33;1mNot yet configured. Let's get you set up.\033[0m\n")
+    config = Config.prompt()
+    config.write()
+    print("Config saved to {}".format(Config.filename()))
 
-if cmd == 'offer':
+# If the argument exists as a file, assume offer
+if os.path.exists(arg):
     config.file = arg
     config.file_size = os.path.getsize(config.file)
     tunnel = Tunnel(config)
     asyncio.run(tunnel.offer())
-elif cmd == 'receive':
-    if len(sys.argv) <= 2:
-        usage()
+elif re.match(r'^\d+:[0-9,a-z]{32}$', arg): # presumed receive id
     tunnel = Tunnel(config)
     asyncio.run(tunnel.receive(arg))
+else:
+    print('invalid offer id or no such file')
+    usage()
+    sys.exit(-1)
