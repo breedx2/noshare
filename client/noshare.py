@@ -25,7 +25,15 @@ class FileSender:
             # self.server.close()
             return
         await self.send_file(reader, writer)
-
+        line = await reader.readline()
+        line = line.decode('utf-8').rstrip()
+        if 'done' == line:
+            print('remote confirms complete.')
+        else:
+            print('remote did not confirm. something is foul.')
+        writer.write('done\n'.encode())
+        await writer.drain()
+        self.server.close()
 
     async def do_handshake(self, reader, writer):
         id = await reader.readline()
@@ -77,6 +85,7 @@ class FileReceiver:
 
         print('downloading...')
         writer.write('ok\n'.encode())
+        await writer.drain()
 
         progress = Progress(size)
         remaining = size
@@ -89,6 +98,9 @@ class FileReceiver:
                 progress.show(remaining)
         progress.show(0, force=True)
         print("saved {}".format(file))
+        writer.write('done\n'.encode());
+        await writer.drain()
+        await reader.readline()
 
     def _confirm(self, prefix, writer, default = 'y'):
         yn = input('{}? [{}] '.format(prefix, default)) or default
@@ -210,8 +222,12 @@ class Tunnel:
         print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
         ssh = Ssh(config, port, remote_port)
         ssh.connect()
-        await server.serve_forever()
-        # ssh.wait()
+        try:
+            await server.serve_forever()
+        except asyncio.exceptions.CancelledError:
+            print('exiting.')
+        ssh.close()
+        ssh.wait(quiet=True)
 
     async def receive(self, id):
         print("Setting up ssh tunnel...")
@@ -219,7 +235,7 @@ class Tunnel:
         remote_port = re.sub(r':.*', '', id)
         ssh = Ssh(config, local_port, remote_port, offer_side=False)
         ssh.connect()
-        print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
+        # print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
         receiver = FileReceiver(id, local_port)
         await receiver.receive()
         ssh.close()
