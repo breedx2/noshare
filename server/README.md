@@ -4,7 +4,8 @@ The `noshare` server is really just a glorified configuration of
 [openssh server running in docker](https://hub.docker.com/r/linuxserver/openssh-server).
 
 It provides pubkey-only, shell-less ssh connections and allows port forwarding
-only to `localhost`, with the docker container acting as a lazy jail.
+only to `localhost` (in-container). The result is a docker container acting as
+an encrypted port-bridge inside a lazy jail.
 
 The server doesn't store any files, doesn't keep track of connection history,
 and doesn't log anything. It acts only as a bridge for a small static set of
