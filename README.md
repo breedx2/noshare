@@ -24,8 +24,6 @@ It looks like this:
 
 # client quickstart
 
-(for server setup/usage [go here](README-server.md))
-
 You must give your server admin your public ssh key (below).
 
 Your server/admin must give you:
@@ -129,6 +127,10 @@ saved file.tgz
 ```
 
 If the target file already exists, you should be prompted before overwriting.
+
+# server quickstart
+
+For server setup/usage [go here](README-server.md).
 
 # shortcomings/weaknesses/future
 
