@@ -150,3 +150,4 @@ turn into issues.
 * no idea if ssh key passphrase prompts work, probably not.
 * send/receive buffers are both static and hard coded -- a dynamic approach might
   yield more efficient transfers.
+* there are no server bandwidth guardrails and trusted clients could abuse this
