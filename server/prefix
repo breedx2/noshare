@@ -1,0 +1,2 @@
+# this should be added before every ssh key
+no-pty,no-X11-forwarding,permitopen="localhost:*",command="/bin/echo three sixes uptime" 
