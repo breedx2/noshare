@@ -45,12 +45,12 @@ for every session with `ssh-add ~/.ssh/noshare`.
 
 ## path/shell
 
-Now to get the noshare command into your shell!
+Now to get the `noshare` command into your shell!
 
 **Option 1** -- Add this to the end of your `~/.bash_profile` or whatever and
 afterward restart your shell:
 ```
-alias noshare="python $(pwd)/noshare.py"
+alias noshare="python /path/to/noshare.py"
 ```
 
 **Option 2** -- Create an executable file called `noshare` and put it in your path,
@@ -61,11 +61,16 @@ with the contents:
 python /path/to/noshare.py $@
 ```
 
+Don't forget to `chmod 755 /path/to/noshare`.
+
 **Option 3** -- Run `python /full/path/to/noshare.py` each time (blah)
 
 ## setup
 
-Run `noshare config` and enter the host, port, and keyfile.
+Now that you've got the client available, you need to do a one-time configuration.
+
+Run `noshare config` and enter the host and port that your admin gave you,
+and the path to the private key corresponding to the pubkey you gave to your admin..
 The result will be saved in `~/.noshare` and looks like this:
 
 ```
