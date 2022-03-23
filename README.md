@@ -30,6 +30,9 @@ Your server/admin must give you:
 * a hostname or ip address
 * a port (or "default" which is 20666)
 
+
+## keygen
+
 You probably have an ssh pubkey in `~/.ssh/id_rsa.pub` and you can just use
 that (preferred), or if you're stubborn you can make a new one:
 
@@ -39,6 +42,8 @@ $ ssh-keygen -f ~/.ssh/noshare
 
 If you set a pasphrase, you probably need to add the key to the ssh agent
 for every session with `ssh-add ~/.ssh/noshare`.
+
+## path/shell
 
 Now to get the noshare command into your shell!
 
@@ -52,10 +57,26 @@ alias noshare="python $(pwd)/noshare.py"
 with the contents:
 
 ```
-python /path/to/noshare.py
+#!/bin/bash
+python /path/to/noshare.py $@
 ```
 
 **Option 3** -- Run `python /full/path/to/noshare.py` each time (blah)
+
+## setup
+
+Run `noshare config` and enter the host, port, and keyfile.
+The result will be saved in `~/.noshare` and looks like this:
+
+```
+[noshare]
+host = your.example.com
+port = 20666
+keyfile = /home/user/.ssh/noshare
+```
+
+## usage
+
 
 # shortcomings/weaknesses/future
 
