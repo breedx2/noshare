@@ -67,6 +67,8 @@ Don't forget to `chmod 755 /path/to/noshare`.
 ## config
 
 Now that you've got the client available, you need to do a one-time configuration.
+You can safely skip this and it'll prompt you the firs time you offer or
+receive.
 
 Run `noshare config` and enter the host and port that your admin gave you,
 and the path to the private key corresponding to the pubkey you gave to your admin..
