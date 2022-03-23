@@ -26,10 +26,11 @@ It looks like this:
 
 (for server setup/usage [go here](README-server.md))
 
+You must give your server admin your public ssh key (below).
+
 Your server/admin must give you:
 * a hostname or ip address
 * a port (or "default" which is 20666)
-
 
 ## keygen
 
@@ -40,7 +41,7 @@ that (preferred), or if you're stubborn you can make a new one:
 $ ssh-keygen -f ~/.ssh/noshare
 ```
 
-If you set a pasphrase, you probably need to add the key to the ssh agent
+If you set a passphrase, you probably need to add the key to the ssh agent
 for every session with `ssh-add ~/.ssh/noshare`.
 
 ## path/shell
@@ -80,8 +81,54 @@ port = 20666
 keyfile = /home/user/.ssh/noshare
 ```
 
-## usage
+## offer
 
+To offer a one-shot file:
+
+```
+noshare /path/to/file.tgz
+```
+
+The output will look like:
+
+```
+$ noshare /path/to/file.tgz
+Config read from /home/user/.noshare
+Setting up local server listener...
+Local ephemeral port is 12123
+Setting up ssh tunnel...
+offer id: 42731:ef38e8e7dc6f4536b5430bf52083e0bc
+ssh tunnel established (pid=1234)
+```
+
+Copy the offer id (in this example `42731:ef38e8e7dc6f4536b5430bf52083e0bc`)
+and send that to the receiving party somehow.
+
+The offer must continue running on your side until the receiver has completed
+the transaction. If you kill the app or close the terminal session or power
+down, the offer is dead and will fail.
+
+There is no server "upload"...just a transfer to the receiver when requested.
+Once the transfer is complete, the offer id is no longer valid for any
+other peers.
+
+## receive
+
+Have an offer id from someone? Great! If you've already configured `noshare`,
+it's simple:
+
+```
+$ noshare 42731:ef38e8e7dc6f4536b5430bf52083e0bc
+Config read from /home/user/.noshare
+Setting up ssh tunnel...
+ssh tunnel established (pid=12345)
+Download file.tgz (236.8 MB)? [y]
+downloading...
+  / 100.0% [1.5 MB/s] [236.8 MB of 236.8 MB] took 00:02:52      
+saved file.tgz
+```
+
+If the target file already exists, you should be prompted before overwriting.
 
 # shortcomings/weaknesses/future
 
@@ -97,3 +144,5 @@ turn into issues.
   maybe there should be a way to keep an offer open/alive for some time or number
   of serves.
 * no idea if ssh key passphrase prompts work, probably not.
+* send/receive buffers are both static and hard coded -- a dynamic approach might
+  yield more efficient transfers.
