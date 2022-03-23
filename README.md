@@ -26,6 +26,36 @@ It looks like this:
 
 (for server setup/usage [go here](README-server.md))
 
+Your server/admin must give you:
+* a hostname or ip address
+* a port (or "default" which is 20666)
+
+You probably have an ssh pubkey in `~/.ssh/id_rsa.pub` and you can just use
+that (preferred), or if you're stubborn you can make a new one:
+
+```
+$ ssh-keygen -f ~/.ssh/noshare
+```
+
+If you set a pasphrase, you probably need to add the key to the ssh agent
+for every session with `ssh-add ~/.ssh/noshare`.
+
+Now to get the noshare command into your shell!
+
+**Option 1** -- Add this to the end of your `~/.bash_profile` or whatever and
+afterward restart your shell:
+```
+alias noshare="python $(pwd)/noshare.py"
+```
+
+**Option 2** -- Create an executable file called `noshare` and put it in your path,
+with the contents:
+
+```
+python /path/to/noshare.py
+```
+
+**Option 3** -- Run `python /full/path/to/noshare.py` each time (blah)
 
 # shortcomings/weaknesses/future
 
@@ -40,3 +70,4 @@ turn into issues.
 * one-shot -- it's convenient but kinda stupid that files are one-shot, and
   maybe there should be a way to keep an offer open/alive for some time or number
   of serves.
+* no idea if ssh key passphrase prompts work, probably not.
