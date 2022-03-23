@@ -66,7 +66,7 @@ Don't forget to `chmod 755 /path/to/noshare`.
 
 **Option 3** -- Run `python /full/path/to/noshare.py` each time (blah)
 
-## setup
+## config
 
 Now that you've got the client available, you need to do a one-time configuration.
 
