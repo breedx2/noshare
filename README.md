@@ -24,7 +24,7 @@ It looks like this:
 
 # client quickstart
 
-(for server setup/usage [go here](server/README.md))
+(for server setup/usage [go here](README-server.md))
 
 
 # shortcomings/weaknesses/future
