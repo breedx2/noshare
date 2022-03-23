@@ -25,3 +25,18 @@ It looks like this:
 # client quickstart
 
 (for server setup/usage [go here](server/README.md))
+
+
+# shortcomings/weaknesses/future
+
+In order to keep things moderately simple, corners are cut. In the interest
+of disclosure, some obvious problems are listed here. These should probably
+turn into issues.
+
+* server host key checking -- Straight-up disabled. yup. sorry. It's convenient,
+  but insecure and it should be improved. This means someone could redirect dns
+  and intercept/mitm traffic.
+* multiple servers -- for simplicity, not supported.
+* one-shot -- it's convenient but kinda stupid that files are one-shot, and
+  maybe there should be a way to keep an offer open/alive for some time or number
+  of serves.
