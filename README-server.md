@@ -11,6 +11,9 @@ The server doesn't store any files, doesn't keep track of connection history,
 and doesn't log anything. It acts only as a bridge for a small static set of
 authorized users.
 
+Please note: as a server owner, you may pay for bandwidth. Your server consumes
+(send/receive) every byte transferred between peers.
+
 # running
 
 First, copy the `server.sh` and `prefix` files somewhere.
