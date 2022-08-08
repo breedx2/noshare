@@ -227,8 +227,7 @@ class Tunnel:
             await server.serve_forever()
         except asyncio.exceptions.CancelledError:
             print('exiting.')
-        ssh.close()
-        ssh.wait(quiet=True)
+        self._cleanup(ssh)
 
     async def receive(self, id):
         print("Setting up ssh tunnel...")
@@ -239,8 +238,13 @@ class Tunnel:
         # print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
         receiver = FileReceiver(id, local_port)
         await receiver.receive()
+        self._cleanup(ssh)
+
+    def _cleanup(self, ssh):
         ssh.close()
         ssh.wait(quiet=True)
+        if config.tempKnownHostsFile:
+            os.remove(config.tempKnownHostsFile)
 
     def _random_port(self):
         return random.randint(1025, 65000)
