@@ -1,12 +1,13 @@
-import os
-import sys
-import subprocess
 from configparser import ConfigParser
 from datetime import datetime
 import asyncio
+import os
 import random
-import uuid
 import re
+import subprocess
+import sys
+import tempfile
+import uuid
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -255,9 +256,16 @@ class Ssh:
     def connect(self):
         tunnel_flag = '-R' if self.offer_side else '-L'
         tunnel_arg = self._make_tunnel_arg()
+        if self.config.tempKnownHostsFile:
+            hosts_file = config.tempKnownHostsFile
+            check_host_key = 'yes'
+        else:
+            hosts_file = '/dev/null'
+            check_host_key = 'no'
         cmd = [
-            "ssh", "-p", str(self.config.remotePort), "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
+            "ssh", "-p", str(self.config.remotePort), 
+            "-o", f"StrictHostKeyChecking={check_host_key}",
+            "-o", f"UserKnownHostsFile={hosts_file}",
             "-N", "-q",
             tunnel_flag, tunnel_arg,
             "-i", self.config.keyfile,
@@ -285,10 +293,11 @@ class Ssh:
         return "{}:localhost:{}".format(self.local_port, self.remote_port)
 
 class Config:
-    def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY):
+    def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY, tempKnownHostsFile = None):
         self.remoteHost = remoteHost
         self.remotePort = remotePort
         self.keyfile = keyfile
+        self.tempKnownHostsFile = tempKnownHostsFile
 
     @staticmethod
     def exists():
@@ -313,7 +322,21 @@ class Config:
         config = ConfigParser()
         config.read(Config.filename())
         ns = config['noshare']
-        return Config(ns['host'], ns['port'], ns['keyfile'])
+        fingerprint = ns.get('fingerprint')
+        if fingerprint:
+            print(f'\u001b[32mUsing host fingerprint {fingerprint}\033[0m')
+            tempKnownHostsFile = Config._write_temp_known_hosts(ns['host'], ns['port'], fingerprint)
+        else:
+            print('\u001b[31m** \u001b[33mWarning: No server fingerprint found in config file. Vulnerable to MITM.\033[0m')
+            tempKnownHostsFile = None
+        return Config(ns['host'], ns['port'], ns['keyfile'], tempKnownHostsFile)
+
+    @staticmethod
+    def _write_temp_known_hosts(host, port, fingerprint):
+        handle, filename = tempfile.mkstemp(prefix='noshare_')
+        with os.fdopen(handle, 'w') as out:
+            out.write(f'[{host}]:{port} {fingerprint}\n')
+        return filename
 
     def write(self):
         config = ConfigParser()
