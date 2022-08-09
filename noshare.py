@@ -297,10 +297,12 @@ class Ssh:
         return "{}:localhost:{}".format(self.local_port, self.remote_port)
 
 class Config:
-    def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY, tempKnownHostsFile = None):
+    def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY, 
+                fingerprint = None, tempKnownHostsFile = None):
         self.remoteHost = remoteHost
         self.remotePort = remotePort
         self.keyfile = keyfile
+        self.fingerprint = fingerprint
         self.tempKnownHostsFile = tempKnownHostsFile
 
     @staticmethod
@@ -319,7 +321,8 @@ class Config:
         if not port: port = DEFAULT_NOSHARE_PORT
         keyfile = input('ssh key file [{}]: '.format(DEFAULT_SSHKEY))
         if not keyfile: keyfile = DEFAULT_SSHKEY
-        return Config(host, port, keyfile)
+        fingerprint = input('ssh host fingerprint [None]: ')
+        return Config(host, port, keyfile, fingerprint)
 
     @staticmethod
     def read():
@@ -333,7 +336,7 @@ class Config:
         else:
             print('\u001b[31m** \u001b[33mWarning: No server fingerprint found in config file. Vulnerable to MITM.\033[0m')
             tempKnownHostsFile = None
-        return Config(ns['host'], ns['port'], ns['keyfile'], tempKnownHostsFile)
+        return Config(ns['host'], ns['port'], ns['keyfile'], fingerprint, tempKnownHostsFile)
 
     @staticmethod
     def _write_temp_known_hosts(host, port, fingerprint):
@@ -345,7 +348,8 @@ class Config:
     def write(self):
         config = ConfigParser()
         config['noshare'] = {
-            "host": self.remoteHost, "port": self.remotePort, "keyfile": self.keyfile
+            'host': self.remoteHost, 'port': self.remotePort, 'keyfile': self.keyfile, 
+            'fingerprint': self.fingerprint
         }
         with open(Config.filename(), 'w') as out:
             config.write(out)
@@ -402,6 +406,7 @@ else:
     print("\n\u001b[33;1mNot yet configured. Let's get you set up.\033[0m\n")
     config = Config.prompt()
     config.write()
+    config = Config.read()
     print("Config saved to {}".format(Config.filename()))
 
 # If the argument exists as a file, assume offer
