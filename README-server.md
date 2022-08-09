@@ -46,6 +46,31 @@ variables or by hacking/hard coding the `server.sh` script:
 * `NOSHARE_PORT` - the incoming port for clients to connect to (default = 20666)
 * `NOSHARE_KEYS_DIR` - where the directory of ssh pubkeys are found (default = `keys` dir peer of `server.sh`)
 
+# your users
+
+There are 2 or 3 things then to give to your users:
+
+* host 
+* port
+* ssh fingerprint
+
+
+The ssh fingerprint helps protect against "man in the middle" (MITM) attacks.
+It sucks with docker tho because if you restart a container then the 
+fingerprint changes.
+
+The `ssh-keyscan` tool is useful for getting server fingerprints.
+
+Simply run:
+```
+ssh-keyscan -p <port> <host>
+```
+
+Or to automate the fetching of the value:
+```
+ssh-keyscan -p 20666 -t ssh-ed25519 noshare.0x77.net | tail -1 | awk '{print $2 " " $3}'
+```
+
 # caveats / improvements
 
 * the modified keys dir is not configurable and requires the `KEYS_DIR` to be writable
