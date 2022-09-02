@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import socket
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -220,9 +221,9 @@ class Tunnel:
         remote_port = self._random_port()
         sender.offer_id = "{}:{}".format(remote_port, uuid.uuid4().hex)
         print("Setting up ssh tunnel...")
-        print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
         ssh = Ssh(config, port, remote_port)
         ssh.connect()
+        print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
         try:
             await server.serve_forever()
         except asyncio.exceptions.CancelledError:
@@ -270,13 +271,42 @@ class Ssh:
             "ssh", "-p", str(self.config.remotePort), 
             "-o", f"StrictHostKeyChecking={check_host_key}",
             "-o", f"UserKnownHostsFile={hosts_file}",
-            "-N", "-q",
+            "-N", #"-q",
             tunnel_flag, tunnel_arg,
             "-i", self.config.keyfile,
             "app@" + self.config.remoteHost
         ]
-        self.child = subprocess.Popen(cmd)
+        # print(cmd)
+        self.child = subprocess.Popen(cmd, 
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, 
+            universal_newlines=True)
+        # self._verify_connection()
+        # rc = self.child.poll()
+        # print(rc)
+        if True or rc:
+            try:
+                out,errs = self.child.communicate(timeout=3)
+                if errs:
+                    print(errs)
+                    raise Exception('Error opening ssh tunnel. Aborting.')
+            except subprocess.TimeoutExpired:
+                print('timeout expired (probably a good thing!)')    
+                rc = self.child.poll()
+                if rc:
+                    raise Exception('Error opening ssh tunenl. Aborting.')
         print("ssh tunnel established (pid={})".format(self.child.pid))
+
+    # def _verify_connection(self):
+    #     if self.offer_side:
+    #         sleep(2) 
+    #         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #         sock.settimeout(2)
+    #         result = sock.connect_ex(('127.0.0.1', self.local_port))
+    #         if result == 0:
+    #             print('port OPEN')
+    #         else:
+    #             print('port CLOSED, connect_ex returned: '+str(result))
+    #         sock.close()
 
     def close(self):
         self.child.terminate()
