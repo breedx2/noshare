@@ -280,22 +280,26 @@ class Ssh:
         self.child = subprocess.Popen(cmd, 
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, 
             universal_newlines=True)
-        # self._verify_connection()
+        rc = self._verify_connection()
+        if not rc:
+            raise Exception('Error opening ssh tunnel. Aborting.')
         # rc = self.child.poll()
         # print(rc)
-        if True or rc:
-            try:
-                out,errs = self.child.communicate(timeout=3)
-                if errs:
-                    print(errs)
-                    raise Exception('Error opening ssh tunnel. Aborting.')
-            except subprocess.TimeoutExpired:
-                print('timeout expired (probably a good thing!)')    
-                rc = self.child.poll()
-                if rc:
-                    raise Exception('Error opening ssh tunenl. Aborting.')
         print("ssh tunnel established (pid={})".format(self.child.pid))
 
+
+    def _verify_connection(self):
+        try:
+            out,errs = self.child.communicate(timeout=3)
+            if errs:
+                print(errs)
+                return False
+        except subprocess.TimeoutExpired:
+            print('timeout expired (probably a good thing!)')    
+            rc = self.child.poll()
+            if rc:
+                return False
+        return True
     # def _verify_connection(self):
     #     if self.offer_side:
     #         sleep(2) 
@@ -364,7 +368,8 @@ class Config:
             print(f'\u001b[32mUsing host fingerprint {fingerprint}\033[0m')
             tempKnownHostsFile = Config._write_temp_known_hosts(ns['host'], ns['port'], fingerprint)
         else:
-            print('\u001b[31m** \u001b[33mWarning: No server fingerprint found in config file. Vulnerable to MITM.\033[0m')
+            print('\u001b[31m** \u001b[33mWarning: No server fingerprint found in config file.\033[0m')
+            print('\u001b[31m** \u001b[33mVulnerable to MITM/eavesdropping.\033[0m')
             tempKnownHostsFile = None
         return Config(ns['host'], ns['port'], ns['keyfile'], fingerprint, tempKnownHostsFile)
 
