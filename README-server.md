@@ -68,7 +68,7 @@ ssh-keyscan -p <port> <host>
 
 Or to automate the fetching of the value:
 ```
-ssh-keyscan -p 20666 -t ssh-ed25519 noshare.0x77.net | tail -1 | awk '{print $2 " " $3}'
+ssh-keyscan -p <port> -t ssh-ed25519 <host> | tail -1 | awk '{print $2 " " $3}'
 ```
 
 # caveats / improvements
