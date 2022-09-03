@@ -1,5 +1,6 @@
 from configparser import ConfigParser
 from datetime import datetime
+import time
 import asyncio
 import os
 import random
@@ -77,6 +78,7 @@ class FileReceiver:
         self.local_port = local_port
     async def receive(self):
         reader,writer = await self.connect()
+
         file,size = await self.handshake(reader, writer)
         if not file or not size: return
         if not self._confirm('Download {} ({})'.format(file, sized(size)), writer):
@@ -113,15 +115,16 @@ class FileReceiver:
         return False
 
     async def connect(self):
-        import time
-        tries = 50
-        while tries > 0:
-            try:
-                reader, writer = await asyncio.open_connection('127.0.0.1', self.local_port)
-                return reader,writer
-            except:
-                tries = tries - 1
-                time.sleep(0.1)
+        return await try_connect(self.local_port)
+        # tries = 50
+        # while tries > 0:
+        #     try:
+        #         reader, writer = await asyncio.open_connection('127.0.0.1', self.local_port)
+        #         return reader,writer
+        #     except:
+        #         tries = tries - 1
+        #         time.sleep(0.1)
+        # raise Exception('Failed to connect (tried 50 times)')
 
     async def handshake(self, reader, writer):
         writer.write("{}\n".format(self.id).encode())
@@ -208,9 +211,9 @@ class Progress:
 class Tunnel:
     def __init__(self, config):
         self.config = config
+
     async def offer(self):
         print("Setting up local server listener...")
-
         sender = FileSender(config)
 
         server = await asyncio.start_server(sender.send, '127.0.0.1', 0, backlog=1)
@@ -223,12 +226,35 @@ class Tunnel:
         print("Setting up ssh tunnel...")
         ssh = Ssh(config, port, remote_port)
         ssh.connect()
-        print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
+        if await self._verify_sender_tunnel(ssh, server, port):
+            print("ssh tunnel established (pid={})".format(ssh.child.pid))
+            print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
+            try:
+                await server.serve_forever()
+            except asyncio.exceptions.CancelledError:
+                print('exiting.')
+            self._cleanup(ssh)
+        else:
+            ssh.child.wait()
+    
+    async def _verify_sender_tunnel(self, ssh, server, port):
+        print("Verifying SSH tunnel integrity...")
+        local_port = self._random_port()
+        ssh = Ssh(config, local_port, port, offer_side=False)
+        ssh.connect()
+
         try:
-            await server.serve_forever()
-        except asyncio.exceptions.CancelledError:
-            print('exiting.')
-        self._cleanup(ssh)
+            reader, writer = await try_connect(local_port)
+            print("Tunnel looks ok.")
+            ssh.close()
+        except Exception:
+            if self._dump_errs(ssh):
+                return False
+        finally:
+            ssh.close()
+            ssh.wait(quiet=True)
+
+        return True
 
     async def receive(self, id):
         print("Setting up ssh tunnel...")
@@ -238,8 +264,24 @@ class Tunnel:
         ssh.connect()
         # print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
         receiver = FileReceiver(id, local_port)
-        await receiver.receive()
-        self._cleanup(ssh)
+        try:
+            await receiver.receive()
+            self._cleanup(ssh)
+        except Exception as ex:
+            print(ex)
+            self._dump_errs(ssh)
+        finally:
+            ssh.close()
+
+    def _dump_errs(self, ssh):
+        rc = ssh.child.poll()
+        if rc:
+            print(f"ssh subprocess exited with {rc}")
+        out,errs = ssh.child.communicate(timeout=3)
+        if errs:
+            print(errs)
+        return (errs or rc)
+        
 
     def _cleanup(self, ssh):
         ssh.close()
@@ -280,26 +322,27 @@ class Ssh:
         self.child = subprocess.Popen(cmd, 
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, 
             universal_newlines=True)
-        rc = self._verify_connection()
-        if not rc:
-            raise Exception('Error opening ssh tunnel. Aborting.')
+        # rc = self._verify_connection()
+        # if not rc:
+        #     raise Exception('Error opening ssh tunnel. Aborting.')
         # rc = self.child.poll()
         # print(rc)
-        print("ssh tunnel established (pid={})".format(self.child.pid))
+        # print("ssh tunnel established (pid={})".format(self.child.pid))
 
 
-    def _verify_connection(self):
-        try:
-            out,errs = self.child.communicate(timeout=3)
-            if errs:
-                print(errs)
-                return False
-        except subprocess.TimeoutExpired:
-            print('timeout expired (probably a good thing!)')    
-            rc = self.child.poll()
-            if rc:
-                return False
-        return True
+    # def _verify_connection(self):
+    #     try:
+    #         out,errs = self.child.communicate(timeout=3)
+    #         if errs:
+    #             print(errs)
+    #             return False
+    #     except subprocess.TimeoutExpired:
+    #         print('timeout expired (probably a good thing!)')    
+    #         rc = self.child.poll()
+    #         if rc:
+    #             return False
+    #     return True
+
     # def _verify_connection(self):
     #     if self.offer_side:
     #         sleep(2) 
@@ -406,8 +449,17 @@ def usage():
     print(" noshare <id>      : receive a file by id\n")
     sys.exit()
 
-def match_id(str):
-    pass
+async def try_connect(port):
+    tries = 50
+    while tries > 0:
+        try:
+            reader, writer = await asyncio.open_connection('127.0.0.1', port)
+            return reader,writer
+        except:
+            tries = tries - 1
+            time.sleep(0.1)
+    raise Exception('Failed to connect (tried 50 times)')
+
 
 # --------- begin main ----------
 
