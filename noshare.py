@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import uuid
-import socket
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -318,42 +317,9 @@ class Ssh:
             "-i", self.config.keyfile,
             "app@" + self.config.remoteHost
         ]
-        # print(cmd)
         self.child = subprocess.Popen(cmd, 
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, 
             universal_newlines=True)
-        # rc = self._verify_connection()
-        # if not rc:
-        #     raise Exception('Error opening ssh tunnel. Aborting.')
-        # rc = self.child.poll()
-        # print(rc)
-        # print("ssh tunnel established (pid={})".format(self.child.pid))
-
-
-    # def _verify_connection(self):
-    #     try:
-    #         out,errs = self.child.communicate(timeout=3)
-    #         if errs:
-    #             print(errs)
-    #             return False
-    #     except subprocess.TimeoutExpired:
-    #         print('timeout expired (probably a good thing!)')    
-    #         rc = self.child.poll()
-    #         if rc:
-    #             return False
-    #     return True
-
-    # def _verify_connection(self):
-    #     if self.offer_side:
-    #         sleep(2) 
-    #         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #         sock.settimeout(2)
-    #         result = sock.connect_ex(('127.0.0.1', self.local_port))
-    #         if result == 0:
-    #             print('port OPEN')
-    #         else:
-    #             print('port CLOSED, connect_ex returned: '+str(result))
-    #         sock.close()
 
     def close(self):
         self.child.terminate()
