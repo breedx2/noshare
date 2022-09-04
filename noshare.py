@@ -1,12 +1,14 @@
-import os
-import sys
-import subprocess
 from configparser import ConfigParser
 from datetime import datetime
+import time
 import asyncio
+import os
 import random
-import uuid
 import re
+import subprocess
+import sys
+import tempfile
+import uuid
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -75,6 +77,7 @@ class FileReceiver:
         self.local_port = local_port
     async def receive(self):
         reader,writer = await self.connect()
+
         file,size = await self.handshake(reader, writer)
         if not file or not size: return
         if not self._confirm('Download {} ({})'.format(file, sized(size)), writer):
@@ -111,15 +114,7 @@ class FileReceiver:
         return False
 
     async def connect(self):
-        import time
-        tries = 50
-        while tries > 0:
-            try:
-                reader, writer = await asyncio.open_connection('127.0.0.1', self.local_port)
-                return reader,writer
-            except:
-                tries = tries - 1
-                time.sleep(0.1)
+        return await try_connect(self.local_port)
 
     async def handshake(self, reader, writer):
         writer.write("{}\n".format(self.id).encode())
@@ -206,9 +201,9 @@ class Progress:
 class Tunnel:
     def __init__(self, config):
         self.config = config
+
     async def offer(self):
         print("Setting up local server listener...")
-
         sender = FileSender(config)
 
         server = await asyncio.start_server(sender.send, '127.0.0.1', 0, backlog=1)
@@ -219,15 +214,37 @@ class Tunnel:
         remote_port = self._random_port()
         sender.offer_id = "{}:{}".format(remote_port, uuid.uuid4().hex)
         print("Setting up ssh tunnel...")
-        print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
         ssh = Ssh(config, port, remote_port)
         ssh.connect()
+        if await self._verify_sender_tunnel(ssh, server, port):
+            print("ssh tunnel established (pid={})".format(ssh.child.pid))
+            print("offer id: \u001b[32;1m{}\033[0m".format(sender.offer_id))
+            try:
+                await server.serve_forever()
+            except asyncio.exceptions.CancelledError:
+                print('exiting.')
+            self._cleanup(ssh)
+        else:
+            ssh.child.wait()
+    
+    async def _verify_sender_tunnel(self, ssh, server, port):
+        print("Verifying SSH tunnel integrity...")
+        local_port = self._random_port()
+        ssh = Ssh(config, local_port, port, offer_side=False)
+        ssh.connect()
+
         try:
-            await server.serve_forever()
-        except asyncio.exceptions.CancelledError:
-            print('exiting.')
-        ssh.close()
-        ssh.wait(quiet=True)
+            reader, writer = await try_connect(local_port)
+            print("Tunnel looks ok.")
+            ssh.close()
+        except Exception:
+            if self._dump_errs(ssh):
+                return False
+        finally:
+            ssh.close()
+            ssh.wait(quiet=True)
+
+        return True
 
     async def receive(self, id):
         print("Setting up ssh tunnel...")
@@ -237,9 +254,30 @@ class Tunnel:
         ssh.connect()
         # print("DEBUG: tunnel local {} to remote {}".format(local_port, remote_port))
         receiver = FileReceiver(id, local_port)
-        await receiver.receive()
+        try:
+            await receiver.receive()
+            self._cleanup(ssh)
+        except Exception as ex:
+            print(ex)
+            self._dump_errs(ssh)
+        finally:
+            ssh.close()
+
+    def _dump_errs(self, ssh):
+        rc = ssh.child.poll()
+        if rc:
+            print(f"ssh subprocess exited with {rc}")
+        out,errs = ssh.child.communicate(timeout=3)
+        if errs:
+            print(errs)
+        return (errs or rc)
+        
+
+    def _cleanup(self, ssh):
         ssh.close()
         ssh.wait(quiet=True)
+        if config.tempKnownHostsFile:
+            os.remove(config.tempKnownHostsFile)
 
     def _random_port(self):
         return random.randint(1025, 65000)
@@ -255,16 +293,24 @@ class Ssh:
     def connect(self):
         tunnel_flag = '-R' if self.offer_side else '-L'
         tunnel_arg = self._make_tunnel_arg()
+        if self.config.tempKnownHostsFile:
+            hosts_file = config.tempKnownHostsFile
+            check_host_key = 'yes'
+        else:
+            hosts_file = '/dev/null'
+            check_host_key = 'no'
         cmd = [
-            "ssh", "-p", str(self.config.remotePort), "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-N", "-q",
+            "ssh", "-p", str(self.config.remotePort), 
+            "-o", f"StrictHostKeyChecking={check_host_key}",
+            "-o", f"UserKnownHostsFile={hosts_file}",
+            "-N", #"-q",
             tunnel_flag, tunnel_arg,
             "-i", self.config.keyfile,
             "app@" + self.config.remoteHost
         ]
-        self.child = subprocess.Popen(cmd)
-        print("ssh tunnel established (pid={})".format(self.child.pid))
+        self.child = subprocess.Popen(cmd, 
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, 
+            universal_newlines=True)
 
     def close(self):
         self.child.terminate()
@@ -285,10 +331,13 @@ class Ssh:
         return "{}:localhost:{}".format(self.local_port, self.remote_port)
 
 class Config:
-    def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY):
+    def __init__(self, remoteHost, remotePort = DEFAULT_NOSHARE_PORT, keyfile = DEFAULT_SSHKEY, 
+                fingerprint = None, tempKnownHostsFile = None):
         self.remoteHost = remoteHost
         self.remotePort = remotePort
         self.keyfile = keyfile
+        self.fingerprint = fingerprint
+        self.tempKnownHostsFile = tempKnownHostsFile
 
     @staticmethod
     def exists():
@@ -306,19 +355,52 @@ class Config:
         if not port: port = DEFAULT_NOSHARE_PORT
         keyfile = input('ssh key file [{}]: '.format(DEFAULT_SSHKEY))
         if not keyfile: keyfile = DEFAULT_SSHKEY
-        return Config(host, port, keyfile)
+        fingerprint = input('ssh host fingerprint [<probe>]: ')
+        if not fingerprint:
+            fingerprint = Config._probe_fingerprint(host, port)
+        return Config(host, port, keyfile, fingerprint)
+
+    @staticmethod
+    def _probe_fingerprint(host, port):
+        cmd = ["ssh-keyscan", "-p", str(port), "-t", "ssh-ed25519", host]
+        print(f"Probing {host}:{port} for ssh fingerprint")
+        child = subprocess.Popen(cmd, 
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+            universal_newlines=True)
+        out,errs = child.communicate(timeout=3)
+        lastLine = out.splitlines()[-1]
+        fingerprint = lastLine[lastLine.index(' ')+1:]
+        print(f"Found: {fingerprint}")
+        user = input('Press <enter> to use this fingerprint or enter another: ')
+        return user if user else fingerprint
 
     @staticmethod
     def read():
         config = ConfigParser()
         config.read(Config.filename())
         ns = config['noshare']
-        return Config(ns['host'], ns['port'], ns['keyfile'])
+        fingerprint = ns.get('fingerprint')
+        if fingerprint:
+            print(f'\u001b[32mUsing host fingerprint {fingerprint}\033[0m')
+            tempKnownHostsFile = Config._write_temp_known_hosts(ns['host'], ns['port'], fingerprint)
+        else:
+            print('\u001b[31m** \u001b[33mWarning: No server fingerprint found in config file.\033[0m')
+            print('\u001b[31m** \u001b[33mVulnerable to MITM/eavesdropping.\033[0m')
+            tempKnownHostsFile = None
+        return Config(ns['host'], ns['port'], ns['keyfile'], fingerprint, tempKnownHostsFile)
+
+    @staticmethod
+    def _write_temp_known_hosts(host, port, fingerprint):
+        handle, filename = tempfile.mkstemp(prefix='noshare_')
+        with os.fdopen(handle, 'w') as out:
+            out.write(f'[{host}]:{port} {fingerprint}\n')
+        return filename
 
     def write(self):
         config = ConfigParser()
         config['noshare'] = {
-            "host": self.remoteHost, "port": self.remotePort, "keyfile": self.keyfile
+            'host': self.remoteHost, 'port': self.remotePort, 'keyfile': self.keyfile, 
+            'fingerprint': self.fingerprint
         }
         with open(Config.filename(), 'w') as out:
             config.write(out)
@@ -340,8 +422,17 @@ def usage():
     print(" noshare <id>      : receive a file by id\n")
     sys.exit()
 
-def match_id(str):
-    pass
+async def try_connect(port):
+    tries = 50
+    while tries > 0:
+        try:
+            reader, writer = await asyncio.open_connection('127.0.0.1', port)
+            return reader,writer
+        except:
+            tries = tries - 1
+            time.sleep(0.1)
+    raise Exception('Failed to connect (tried 50 times)')
+
 
 # --------- begin main ----------
 
@@ -375,6 +466,7 @@ else:
     print("\n\u001b[33;1mNot yet configured. Let's get you set up.\033[0m\n")
     config = Config.prompt()
     config.write()
+    config = Config.read()
     print("Config saved to {}".format(Config.filename()))
 
 # If the argument exists as a file, assume offer

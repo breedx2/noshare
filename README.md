@@ -24,11 +24,16 @@ It looks like this:
 
 # client quickstart
 
+The noshare client can both _offer_ files and _receive_ files.
+
 You must give your server admin your public ssh key (below).
 
 Your server/admin must give you:
 * a hostname or ip address
 * a port (or "default" which is 20666)
+
+And optionally:
+* server ssh fingerprint
 
 ## keygen
 
@@ -67,11 +72,16 @@ Don't forget to `chmod 755 /path/to/noshare`.
 ## config
 
 Now that you've got the client available, you need to do a one-time configuration.
-You can safely skip this and it'll prompt you the firs time you offer or
+You can safely skip this and it'll prompt you the first time you offer or
 receive.
 
 Run `noshare config` and enter the host and port that your admin gave you,
-and the path to the private key corresponding to the pubkey you gave to your admin..
+and the path to the private key corresponding to the pubkey you gave to your admin.
+
+If your admin gave you an ssh server hostkey, you can add that as well, otherwise
+the config step will probe for it. It's a good idea to verify that the probed 
+value matches the true server hostkey fingerprint (check with the admin if unsure).
+
 The result will be saved in `~/.noshare` and looks like this:
 
 ```
@@ -79,6 +89,7 @@ The result will be saved in `~/.noshare` and looks like this:
 host = your.example.com
 port = 20666
 keyfile = /home/user/.ssh/noshare
+fingerprint = ssh-ed25519 ABCDC3NzaC1lZDI1NTE5AAAdIJB8pG9d87RdbLBXKpD7tSMKACL2gbpDiCfX123123123
 ```
 
 ## offer
@@ -140,9 +151,6 @@ In order to keep things moderately simple, corners are cut. In the interest
 of disclosure, some obvious problems are listed here. These should probably
 turn into issues.
 
-* server host key checking -- Straight-up disabled. yup. sorry. It's convenient,
-  but insecure and it should be improved. This means someone could redirect dns
-  and intercept/mitm traffic.
 * multiple servers -- for simplicity, not supported.
 * one-shot -- it's convenient but kinda stupid that files are one-shot, and
   maybe there should be a way to keep an offer open/alive for some time or number
