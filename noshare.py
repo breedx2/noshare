@@ -364,8 +364,24 @@ class Config:
         if not port: port = DEFAULT_NOSHARE_PORT
         keyfile = input('ssh key file [{}]: '.format(DEFAULT_SSHKEY))
         if not keyfile: keyfile = DEFAULT_SSHKEY
-        fingerprint = input('ssh host fingerprint [None]: ')
+        fingerprint = input('ssh host fingerprint [<probe>]: ')
+        if not fingerprint:
+            fingerprint = Config._probe_fingerprint(host, port)
         return Config(host, port, keyfile, fingerprint)
+
+    @staticmethod
+    def _probe_fingerprint(host, port):
+        cmd = ["ssh-keyscan", "-p", str(port), "-t", "ssh-ed25519", host]
+        print(f"Probing {host}:{port} for ssh fingerprint")
+        child = subprocess.Popen(cmd, 
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+            universal_newlines=True)
+        out,errs = child.communicate(timeout=3)
+        lastLine = out.splitlines()[-1]
+        fingerprint = lastLine[lastLine.index(' ')+1:]
+        print(f"Found: {fingerprint}")
+        user = input('Press <enter> to use this fingerprint or enter another: ')
+        return user if user else fingerprint
 
     @staticmethod
     def read():
