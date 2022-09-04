@@ -115,15 +115,6 @@ class FileReceiver:
 
     async def connect(self):
         return await try_connect(self.local_port)
-        # tries = 50
-        # while tries > 0:
-        #     try:
-        #         reader, writer = await asyncio.open_connection('127.0.0.1', self.local_port)
-        #         return reader,writer
-        #     except:
-        #         tries = tries - 1
-        #         time.sleep(0.1)
-        # raise Exception('Failed to connect (tried 50 times)')
 
     async def handshake(self, reader, writer):
         writer.write("{}\n".format(self.id).encode())
