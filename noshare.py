@@ -10,6 +10,8 @@ import sys
 import tempfile
 import uuid
 
+VERSION="0.2.0"
+
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
 CHUNK_LEN = 64*1024
@@ -420,6 +422,7 @@ def usage():
     print(" noshare config    : configure the program")
     print(" noshare <file>    : offer a single file")
     print(" noshare <id>      : receive a file by id\n")
+    print(" version: {}\n".format(VERSION))
     sys.exit()
 
 async def try_connect(port):
