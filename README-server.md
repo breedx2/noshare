@@ -17,7 +17,7 @@ Please note: as a server owner, you may pay for bandwidth. Your server consumes
 
 # setup
 
-## prerequesites
+## prerequisites
 
 To run the server, it is expected that you have the following
 software installed:
