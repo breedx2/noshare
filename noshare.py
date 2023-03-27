@@ -148,12 +148,15 @@ class Progress:
         self.last_display = 0.0
         self.spin = ['/', '-', '\\', '|']
         self.last_str = ''
+        self.ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
     def show(self, remaining, force=False):
         now = datetime.now().timestamp()
         if not force and now - self.last_display < 0.5:
             return
-        print(''.ljust(len(self.last_str), '\b'), end='', flush=True)
+        
+        stripped = self.ansi_escape.sub('', self.last_str)
+        print(''.ljust(len(stripped), '\b'), end='', flush=True)
 
         elapsed = now - self.start_time
         transferred = self.size - remaining
