@@ -17,6 +17,17 @@ Please note: as a server owner, you may pay for bandwidth. Your server consumes
 
 # setup
 
+## prerequisites
+
+To run the server, it is expected that you have the following
+software installed:
+
+* docker
+* bash
+* common unix commandline tools (find, basename, tail, etc)
+
+## prepare
+
 First, copy the `server.sh` and `prefix` files somewhere.
 
 ```
