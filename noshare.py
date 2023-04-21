@@ -287,6 +287,34 @@ class Tunnel:
     def _random_port(self):
         return random.randint(1025, 65000)
 
+class SshKeyCheck:
+    def __init__(self, keyfile):
+        self.keyfile = keyfile
+
+    def has_passphrase(self):
+        cmd = ["ssh-keygen", "-y", "-P", "", "-f", self.keyfile ]
+        child = subprocess.Popen(cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        child.wait()
+        rc = child.returncode
+        return rc != 0
+
+    def read_pubkey(self):
+        f = open(f"{self.keyfile}.pub", 'r')
+        content = f.read()
+        f.close()
+        return content.strip()
+
+    def agent_hasit(self):
+        pubkey = self.read_pubkey()
+        cmd = ["ssh-add", "-L" ]
+        child = subprocess.Popen(cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        out,errs = child.communicate(timeout=10)
+        lines = map(lambda x: x.strip(), out.splitlines())
+        return pubkey in lines
 
 class Ssh:
     def __init__(self, config, local_port, remote_port, offer_side = True):
@@ -474,6 +502,16 @@ else:
     config.write()
     config = Config.read()
     print("Config saved to {}".format(Config.filename()))
+
+# Guard against keys with passphrase
+keycheck = SshKeyCheck(config.keyfile)
+if(keycheck.has_passphrase()):
+    if not keycheck.agent_hasit():
+        print("\n\u001b[31;1mWHOOPS!\033[0m\n")
+        print("\u001b[33;1mIf you use an ssh key with a passphrase, you must")
+        print("first add it to the ssh-agent. Try running:\033[0m\n")
+        print(f" $ ssh-add {config.keyfile}\n")
+        sys.exit(-1)
 
 # If the argument exists as a file, assume offer
 if os.path.exists(arg):
