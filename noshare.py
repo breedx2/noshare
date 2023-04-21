@@ -10,7 +10,7 @@ import sys
 import tempfile
 import uuid
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
