@@ -1,16 +1,19 @@
 from configparser import ConfigParser
 from datetime import datetime
+from pathlib import Path
 import time
 import asyncio
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import uuid
+from contextlib import contextmanager
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -467,6 +470,31 @@ async def try_connect(port):
             time.sleep(0.1)
     raise Exception('Failed to connect (tried 50 times)')
 
+@contextmanager
+def _maybe_bundle(arg):
+    if os.path.isdir(arg):
+        print("Input is a directory, combining to temp tarball...")
+        tempdir = tempfile.mkdtemp()
+        dirname = os.path.basename(arg.rstrip('/'))
+        tar = f"{tempdir}/{dirname}.tar"
+        print(f"\u001b[36;1mCreating temp tarball: {tar}\033[0m")
+        parent = Path(arg).parent
+        cmd = ["tar", "-cf", tar, "-C", str(parent), dirname]
+        child = subprocess.Popen(cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        child.wait()
+        # TODO: What if child fails?
+        try:
+            yield tar
+        finally:
+            try:
+                print(f"\u001b[36;1mRemoving {tempdir}\u001b[36;1m")
+                shutil.rmtree(tempdir)
+            except IOError:
+                sys.stderr.write('Failed to clean up temp dir {}'.format(path))
+    else:
+        yield arg
 
 # --------- begin main ----------
 
@@ -513,12 +541,13 @@ if(keycheck.has_passphrase()):
         print(f" $ ssh-add {config.keyfile}\n")
         sys.exit(-1)
 
-# If the argument exists as a file, assume offer
+# If the argument exists as a file or dir, assume offer
 if os.path.exists(arg):
-    config.file = arg
-    config.file_size = os.path.getsize(config.file)
-    tunnel = Tunnel(config)
-    asyncio.run(tunnel.offer())
+    with _maybe_bundle(arg) as infile:
+        config.file = infile
+        config.file_size = os.path.getsize(config.file)
+        tunnel = Tunnel(config)
+        asyncio.run(tunnel.offer())
 elif re.match(r'^\d+:[0-9,a-z]{32}$', arg): # presumed receive id
     tunnel = Tunnel(config)
     asyncio.run(tunnel.receive(arg))
