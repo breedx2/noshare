@@ -13,7 +13,7 @@ import tempfile
 import uuid
 from contextlib import contextmanager
 
-VERSION="0.4.0"
+VERSION="0.5.0"
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
@@ -307,7 +307,8 @@ class SshKeyCheck:
         f = open(f"{self.keyfile}.pub", 'r')
         content = f.read()
         f.close()
-        return content.strip()
+        # Remove trailing filename/name part
+        return ' '.join(content.strip().split(' ')[:2])
 
     def agent_hasit(self):
         pubkey = self.read_pubkey()
@@ -316,7 +317,8 @@ class SshKeyCheck:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             universal_newlines=True)
         out,errs = child.communicate(timeout=10)
-        lines = map(lambda x: x.strip(), out.splitlines())
+        lines = map(lambda x: ' '.join(x.strip().split(' ')[:2]), out.splitlines())
+        lines = list(lines)
         return pubkey in lines
 
 class Ssh:
