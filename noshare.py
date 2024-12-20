@@ -373,7 +373,7 @@ class Config:
                 fingerprint = None, tempKnownHostsFile = None):
         self.remoteHost = remoteHost
         self.remotePort = remotePort
-        self.keyfile = keyfile
+        self.keyfile = os.path.expanduser(keyfile)
         self.fingerprint = fingerprint
         self.tempKnownHostsFile = tempKnownHostsFile
 
