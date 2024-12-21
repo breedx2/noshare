@@ -40,6 +40,7 @@ class FileSender:
             print('remote did not confirm. something is foul.')
         writer.write('done\n'.encode())
         await writer.drain()
+        writer.close()
         self.server.close()
 
     async def do_handshake(self, reader, writer):
