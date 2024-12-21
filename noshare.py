@@ -13,7 +13,7 @@ import tempfile
 import uuid
 from contextlib import contextmanager
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 
 DEFAULT_NOSHARE_PORT = 20666
 DEFAULT_SSHKEY = '~/.ssh/id_rsa'
